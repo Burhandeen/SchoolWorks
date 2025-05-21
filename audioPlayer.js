@@ -1,34 +1,3 @@
-// Sample data for audio books
-const audioBooks = [
-  {
-    id: "a001",
-    title: "The Great Gatsby",
-    contributor: "Sarah Johnson",
-    coverImage: "images/1.jpg",
-    audioFile: "audio/sample1.mp3",
-    duration: "2:45:30",
-    description: "A classic novel by F. Scott Fitzgerald",
-  },
-  {
-    id: "a002",
-    title: "Thinking, Fast and Slow",
-    contributor: "Michael Chen",
-    coverImage: "images/2.png",
-    audioFile: "audio/sample2.mp3",
-    duration: "3:20:15",
-    description: "Psychology book by Daniel Kahneman",
-  },
-  {
-    id: "a003",
-    title: "Atomic Habits",
-    contributor: "Emma Wilson",
-    coverImage: "images/3.jpeg",
-    audioFile: "audio/sample3.mp3",
-    duration: "1:55:40",
-    description: "Self-improvement book by James Clear",
-  },
-];
-
 // Function to format time in MM:SS format
 function formatTime(seconds) {
   const minutes = Math.floor(seconds / 60);
@@ -36,10 +5,70 @@ function formatTime(seconds) {
   return `${minutes}:${remainingSeconds < 10 ? "0" : ""}${remainingSeconds}`;
 }
 
+// Global variables for pagination
+let currentPage = 1;
+const itemsPerPage = 10;
+let totalPages = 1;
+
+async function fetchAudioBooks(page = 1) {
+  try {
+    // Show loading state
+    const audioGrid = document.getElementById("audioGrid");
+    audioGrid.innerHTML =
+      '<div class="loading-indicator">Loading audio books...</div>';
+
+    // Fetch audio books from the API with pagination
+    const response = await fetch(
+      `http://localhost:8080/api/audiobooks?page=${page}&limit=${itemsPerPage}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // If the API returns pagination metadata
+    if (data.pagination) {
+      currentPage = data.pagination.currentPage;
+      totalPages = data.pagination.totalPages;
+      renderPagination();
+    }
+
+    // Get the actual books array (adjust based on your API response structure)
+    const audioBooks = data.items || data;
+
+    renderAudioBooks(audioBooks);
+
+    // Store the fetched books for search functionality
+    if (!window.allAudioBooks) {
+      window.allAudioBooks = [];
+    }
+    window.allAudioBooks = [...window.allAudioBooks, ...audioBooks];
+
+    return audioBooks;
+  } catch (error) {
+    console.error("Error fetching audio books:", error);
+    const audioGrid = document.getElementById("audioGrid");
+    audioGrid.innerHTML = `
+      <div class="error-message">
+        <p>Sorry, we couldn't load the audio books. Please try again later.</p>
+        <button onclick="fetchAudioBooks(${currentPage})">Retry</button>
+      </div>
+    `;
+    return [];
+  }
+}
+
 // Function to render audio books with custom player
 function renderAudioBooks(books) {
   const audioGrid = document.getElementById("audioGrid");
   audioGrid.innerHTML = "";
+
+  if (books.length === 0) {
+    audioGrid.innerHTML = '<div class="no-results">No audio books found</div>';
+    return;
+  }
 
   books.forEach((book) => {
     const card = document.createElement("div");
@@ -194,7 +223,11 @@ function setupAudioPlayer(playerElement) {
 const searchInput = document.getElementById("audioSearchInput");
 searchInput.addEventListener("input", function () {
   const searchTerm = this.value.toLowerCase();
-  const filteredBooks = audioBooks.filter(
+
+  // Make sure we have the audio books data
+  if (!window.allAudioBooks) return;
+
+  const filteredBooks = window.allAudioBooks.filter(
     (book) =>
       book.title.toLowerCase().includes(searchTerm) ||
       book.contributor.toLowerCase().includes(searchTerm) ||
@@ -210,5 +243,120 @@ contributeBtn.addEventListener("click", function () {
   window.location.href = "contributeAudio.html";
 });
 
-// Initial render
-renderAudioBooks(audioBooks);
+// Initial fetch and render
+document.addEventListener("DOMContentLoaded", () => {
+  fetchAudioBooks();
+});
+
+// Function to render pagination controls
+function renderPagination() {
+  const paginationContainer = document.getElementById("pagination");
+  if (!paginationContainer) {
+    // Create pagination container if it doesn't exist
+    const container = document.createElement("div");
+    container.id = "pagination";
+    container.className = "pagination";
+    document.querySelector(".audio-content").appendChild(container);
+  }
+
+  const pagination = document.getElementById("pagination");
+  pagination.innerHTML = "";
+
+  // Previous button
+  const prevBtn = document.createElement("button");
+  prevBtn.textContent = "Previous";
+  prevBtn.disabled = currentPage === 1;
+  prevBtn.addEventListener("click", () => {
+    if (currentPage > 1) {
+      fetchAudioBooks(currentPage - 1);
+    }
+  });
+  pagination.appendChild(prevBtn);
+
+  // Page numbers
+  for (let i = 1; i <= totalPages; i++) {
+    const pageBtn = document.createElement("button");
+    pageBtn.textContent = i;
+    pageBtn.className = i === currentPage ? "active" : "";
+    pageBtn.addEventListener("click", () => {
+      fetchAudioBooks(i);
+    });
+    pagination.appendChild(pageBtn);
+  }
+
+  // Next button
+  const nextBtn = document.createElement("button");
+  nextBtn.textContent = "Next";
+  nextBtn.disabled = currentPage === totalPages;
+  nextBtn.addEventListener("click", () => {
+    if (currentPage < totalPages) {
+      fetchAudioBooks(currentPage + 1);
+    }
+  });
+  pagination.appendChild(nextBtn);
+}
+
+// Add pagination CSS
+const paginationStyle = document.createElement("style");
+paginationStyle.textContent = `
+  .pagination {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 2rem 0;
+  }
+  
+  .pagination button {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  .pagination button.active {
+    background: #333;
+    color: white;
+  }
+  
+  .pagination button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+document.head.appendChild(paginationStyle);
+
+// Add some CSS for loading and error states
+const style = document.createElement("style");
+style.textContent = `
+  .loading-indicator, .error-message, .no-results {
+    padding: 2rem;
+    text-align: center;
+    grid-column: 1 / -1;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+  
+  .error-message {
+    color: #e74c3c;
+  }
+  
+  .error-message button {
+    background: #333;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    margin-top: 1rem;
+    cursor: pointer;
+  }
+  
+  .no-results {
+    color: #7f8c8d;
+    font-style: italic;
+document.head.appendChild(style);
+
+  }
+`;
+document.head.appendChild(style);
